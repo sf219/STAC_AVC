@@ -9,3 +9,4 @@ It is intended for prototyping and is far from a functional AVC implementation.
 - [ ] Add Chroma support
 - [ ] Add 8x8 transforms
 - [ ] Add comments so that it is easier to interpret
+- [ ] dec_cavlc is not working properly
