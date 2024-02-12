@@ -1,6 +1,8 @@
 # Standard libraries
 import numpy as np
 import scipy.io
+from PIL import Image, ImageOps
+import math
 
 y_table = np.array(
     [[16, 11, 10, 16, 24, 40, 51, 61], [12, 12, 14, 19, 26, 58, 60,
@@ -30,9 +32,8 @@ def quality_to_factor(quality):
     delta = factor*y_table[0, 0]
     return factor, delta
 
-
 def enc_cavlc(data, nL: int, nU: int):
-    mat_file = scipy.io.loadmat('video_codecs/data/table.mat')
+    mat_file = scipy.io.loadmat('data/table.mat')
     Table_coeff0 = mat_file['Table_coeff0']
     Table_coeff1 = mat_file['Table_coeff1']
     Table_coeff2 = mat_file['Table_coeff2']
@@ -218,7 +219,7 @@ def enc_cavlc(data, nL: int, nU: int):
 def dec_cavlc(bits, nL, nU):
     # TODO: This is not working
     # Load the table containing all the tables
-    mat_file = scipy.io.loadmat('video_codecs/data/table.mat')
+    mat_file = scipy.io.loadmat('data/table.mat')
     Table_coeff0 = mat_file['Table_coeff0']
     Table_coeff1 = mat_file['Table_coeff1']
     Table_coeff2 = mat_file['Table_coeff2']
@@ -402,3 +403,182 @@ def dec_prfx(bits, i):
         i += 1
     level_prfx += 1
     return level_prfx, i
+
+
+def bdsnr(metric_set1, metric_set2):
+  """
+  BJONTEGAARD    Bjontegaard metric calculation
+  Bjontegaard's metric allows to compute the average gain in psnr between two
+  rate-distortion curves [1].
+  rate1,psnr1 - RD points for curve 1
+  rate2,psnr2 - RD points for curve 2
+  returns the calculated Bjontegaard metric 'dsnr'
+  code adapted from code written by : (c) 2010 Giuseppe Valenzise
+  http://www.mathworks.com/matlabcentral/fileexchange/27798-bjontegaard-metric/content/bjontegaard.m
+  """
+  # pylint: disable=too-many-locals
+  # numpy seems to do tricks with its exports.
+  # pylint: disable=no-member
+  # map() is recommended against.
+  # pylint: disable=bad-builtin
+  rate1 = [x[0] for x in metric_set1]
+  psnr1 = [x[1] for x in metric_set1]
+  rate2 = [x[0] for x in metric_set2]
+  psnr2 = [x[1] for x in metric_set2]
+
+  log_rate1 = map(math.log, rate1)
+  log_rate2 = map(math.log, rate2)
+
+  # Best cubic poly fit for graph represented by log_ratex, psrn_x.
+  poly1 = np.polyfit(log_rate1, psnr1, 3)
+  poly2 = np.polyfit(log_rate2, psnr2, 3)
+
+  # Integration interval.
+  min_int = max([min(log_rate1), min(log_rate2)])
+  max_int = min([max(log_rate1), max(log_rate2)])
+
+  # Integrate poly1, and poly2.
+  p_int1 = np.polyint(poly1)
+  p_int2 = np.polyint(poly2)
+
+  # Calculate the integrated value over the interval we care about.
+  int1 = np.polyval(p_int1, max_int) - np.polyval(p_int1, min_int)
+  int2 = np.polyval(p_int2, max_int) - np.polyval(p_int2, min_int)
+
+  # Calculate the average improvement.
+  if max_int != min_int:
+    avg_diff = (int2 - int1) / (max_int - min_int)
+  else:
+    avg_diff = 0.0
+  return avg_diff
+
+
+def bdrate(metric_set1, metric_set2):
+    """
+    BJONTEGAARD    Bjontegaard metric calculation
+    Bjontegaard's metric allows to compute the average % saving in bitrate
+    between two rate-distortion curves [1].
+    rate1,psnr1 - RD points for curve 1
+    rate2,psnr2 - RD points for curve 2
+    adapted from code from: (c) 2010 Giuseppe Valenzise
+    """
+    # numpy plays games with its exported functions.
+    # pylint: disable=no-member
+    # pylint: disable=too-many-locals
+    # pylint: disable=bad-builtin
+    rate1 = [float(x[0]) for x in metric_set1]
+    psnr1 = [float(x[1]) for x in metric_set1]
+    rate2 = [float(x[0]) for x in metric_set2]
+    psnr2 = [float(x[1]) for x in metric_set2]
+
+    #breakpoint()
+
+    log_rate1 = np.log(np.array(rate1))
+    log_rate2 = np.log(np.array(rate2))
+    #log_rate1 = map(math.log, rate1)
+    #log_rate2 = map(math.log, rate2)
+
+  # Best cubic poly fit for graph represented by log_ratex, psrn_x.
+    try:
+        poly1 = np.polyfit(psnr1, log_rate1, 3)
+        poly2 = np.polyfit(psnr2, log_rate2, 3)
+    except:
+        return 100
+
+    # Integration interval.
+    min_int = max([min(psnr1), min(psnr2)])
+    max_int = min([max(psnr1), max(psnr2)])
+
+    # find integral
+    p_int1 = np.polyint(poly1)
+    p_int2 = np.polyint(poly2)
+
+    # Calculate the integrated value over the interval we care about.
+    int1 = np.polyval(p_int1, max_int) - np.polyval(p_int1, min_int)
+    int2 = np.polyval(p_int2, max_int) - np.polyval(p_int2, min_int)
+
+    # Calculate the average improvement.
+    avg_exp_diff = (int2 - int1) / (max_int - min_int)
+
+    # In really bad formed data the exponent can grow too large.
+    # clamp it.
+    if avg_exp_diff > 200:
+        avg_exp_diff = 200
+
+    # Convert to a percentage.
+    avg_diff = (math.exp(avg_exp_diff) - 1) * 100
+
+    return avg_diff
+
+def read_image_resize_rect(img_path, im_size=(256, 256)):
+    im = Image.open(img_path)
+    new_height = im_size[0]
+    new_width = im_size[1]
+    resized_image = ImageOps.fit(im, (new_width, new_height), Image.BICUBIC)
+    resized_image = np.array(resized_image).astype(np.float64)
+    if (len(resized_image.shape) == 3):
+        resized_image = rgb2ycbcr(resized_image/255)
+        depth = resized_image.shape[2]
+    else:
+        depth = 1    
+    resized_image = np.round(resized_image)
+    return resized_image, depth
+
+def ycbcr2rgb(im):
+    xform = np.array([[1, 0, 1.402], [1, -0.34414, -.71414], [1, 1.772, 0]])
+    rgb = im.astype(np.float32)
+    rgb[:,:,[1,2]] -= 128
+    rgb = rgb.dot(xform.T)
+    np.putmask(rgb, rgb > 255, 255)
+    np.putmask(rgb, rgb < 0, 0)
+    return np.uint8(rgb)
+
+def rgb2ycbcr(rgb):
+    # This matrix comes from a formula in Poynton's, "Introduction to
+    # Digital Video" (p. 176, equations 9.6).
+    # T is from equation 9.6: ycbcr = origT * rgb + origOffset;
+    origT = np.array([[65.481, 128.553, 24.966],
+                      [-37.797, -74.203, 112],
+                      [112, -93.786, -18.214]])
+    origOffset = np.array([16, 128, 128])
+
+    # Initialize variables
+    isColormap = False
+
+    # Must reshape colormap to be m x n x 3 for transformation
+    if rgb.ndim == 2:
+        # colormap
+        isColormap = True
+        colors = rgb.shape[0]
+        rgb = rgb.reshape((colors, 1, 3))
+
+    # The formula ycbcr = origT * rgb + origOffset, converts a RGB image in the
+    # range [0 1] to a YCbCr image where Y is in the range [16 235], and Cb and
+    # Cr are in that range [16 240]. For each class type, we must calculate
+    # scaling factors for origT and origOffset so that the input image is
+    # scaled between 0 and 1, and so that the output image is in the range of
+    # the respective class type.
+    if np.issubdtype(rgb.dtype, np.integer):
+        if rgb.dtype == np.uint8:
+            scaleFactorT = 1/255
+            scaleFactorOffset = 1
+        elif rgb.dtype == np.uint16:
+            scaleFactorT = 257/65535
+            scaleFactorOffset = 257
+    else:
+        scaleFactorT = 1
+        scaleFactorOffset = 1
+
+    # The formula ycbcr = origT*rgb + origOffset is rewritten as
+    # ycbcr = scaleFactorForT * origT * rgb + scaleFactorForOffset*origOffset.
+    # To use np.einsum, we rewrite the formula as ycbcr = T * rgb + offset,
+    # where T and offset are defined below.
+    T = scaleFactorT * origT
+    offset = scaleFactorOffset * origOffset
+    ycbcr = np.zeros_like(rgb)
+    for p in range(3):
+        ycbcr[:, :, p] = T[p, 0]*rgb[:, :, 0] + T[p, 1]*rgb[:, :, 1] + T[p, 2]*rgb[:, :, 2] + offset[p]   
+
+    if isColormap:
+        ycbcr = ycbcr.squeeze()
+    return ycbcr

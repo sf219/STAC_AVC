@@ -1,13 +1,9 @@
 import numpy as np
-from video_codecs.utils_avc import enc_cavlc
-from utils.bits_class import Bits
-from video_codecs.AVC_transform import AVC_transform as transform
-from video_codecs.AVC_transform import int_grid_MSSSIM_transform as perceptual_transform
-from scipy.stats import mode
+from STAC_AVC.utils_avc import enc_cavlc
+from STAC_AVC.AVC_transform import AVC_transform as transform
 
 def compute_sae(res_block, weights=1):
     return np.sum(np.square(np.sqrt(weights)*res_block))
-
 
 def most_probable_mode(modes, i, j):
     if (i > 0 and j > 0):
@@ -17,7 +13,6 @@ def most_probable_mode(modes, i, j):
     else:
         return False, 0 # it doesn't really matter
     return prev == modes[i, j], prev
-
 
 def enc_golomb(symbol, sign):
     bits = ''
@@ -51,7 +46,7 @@ def enc_golomb(symbol, sign):
 class SAVC():
 
     def __init__(self, nqs, flag_uniform=True):
-        self.qsnu = np.linspace(5.5*nqs, 7*nqs, nqs)
+        self.qsnu = np.linspace(3*nqs, 5*nqs, nqs)
         self.mb_size = 16
         self.b_size = 4
         self.trans = transform(flag_uniform)
@@ -77,10 +72,8 @@ class SAVC():
     def compress(self, img, ind_quality=0):
         self.set_quantization_parameters(ind_quality)
         Y, bits, res = self.intra_encode_frame(img)
-        bits_ob = Bits()
-        bits_ob.bits_over = bits
         Y = np.clip(Y, 0, 255)
-        return res, Y, bits_ob
+        return res, Y, bits
     
     def intra_encode_frame(self, im):
         # Initialize variables
@@ -95,6 +88,7 @@ class SAVC():
         num_bits += self.overhead_bits
         return Seq_r, num_bits, Res
 
+    # this is here for compatibility with the Q-GFT codec. I will remove.
     def set_Q(self, img):
         self.compute_class_Q_frame(img)
 
@@ -294,37 +288,6 @@ class SAVC():
                 class_label = self.blk_class_16[ix + i//b_size, jx + j//b_size]
                 err_r[i:i+b_size, j:j+b_size] = self.trans.bck_pass(blk, QP, ind=class_label)
         return err_r, bits, num_zeros_16
-
-
-class AVC_MSSIM(SAVC):
-
-    def __init__(self, nqs, compute_Q_obj, flag_uniform=True):
-        super().__init__(nqs)
-        self.compute_Q_obj = compute_Q_obj
-        self.trans = perceptual_transform(compute_Q_obj, flag_uniform)
-
-    def set_Q(self, Seq):
-        self.Qval, self.ind_closest, _ = self.compute_Q_obj.sample_q(Seq)
-        self.compute_class_Q_frame()
-
-    def compute_class_Q_frame(self):
-        tmp_class = self.ind_closest 
-        tmp_class = tmp_class.astype(int)
-        self.blk_compress = np.zeros((tmp_class.shape[0]//2, tmp_class.shape[1]//2))
-        self.blk_class_16 = np.zeros_like(tmp_class)
-        self.blk_class_4 = np.zeros_like(tmp_class)
-        for i in range(0, tmp_class.shape[0], 4):
-            for j in range(0, tmp_class.shape[1], 4):
-                tmp_all = tmp_class[i:i+4, j:j+4]
-                self.blk_class_16[i:i+4, j:j+4] = mode(tmp_all.ravel())[0]
-    
-        for i in range(0, tmp_class.shape[0], 2):
-            for j in range(0, tmp_class.shape[1], 2):
-                tmp_all = tmp_class[i:i+2, j:j+2]
-                self.blk_class_4[i:i+2, j:j+2] = mode(tmp_all.ravel())[0]
-
-    def compress_Q(self):
-        self.overhead_bits = self.compute_Q_obj.compress_Q(self.blk_compress)
 
 
 def mode_header_4(modes_4, posx, posy):
