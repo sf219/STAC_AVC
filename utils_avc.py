@@ -582,3 +582,9 @@ def rgb2ycbcr(rgb):
     if isColormap:
         ycbcr = ycbcr.squeeze()
     return ycbcr
+
+def dct_2d(a):
+    return dct( dct( a, axis=0, norm='ortho' ), axis=1, norm='ortho' )
+
+def idct_2d(a):
+    return idct( idct( a, axis=0 , norm='ortho'), axis=1 , norm='ortho')

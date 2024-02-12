@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.fftpack import dct
+from STAC_AVC.utils_avc import dct_2d
 
 # This file has an implementation of both integer and non-integer transforms for AVC.
 # There's almost no difference in performance between both.
@@ -152,7 +153,7 @@ class nint_AVC_transform(AVC_transform):
     def __init__(self, flag_uniform=True):
         super().__init__()
 
-        self.Cf = dct(np.eye(4), norm='ortho', axis=0)
+        self.Cf = dct_2d(np.eye(4), norm='ortho', axis=0)
         self.Ci = self.Cf
         if flag_uniform:
             self.base_Q = np.ones((4, 4))
