@@ -64,7 +64,7 @@ def get_mean_format(data):
     return '{}'.format(mean)
 
 
-path = '../Images/CLIC/Testing/'
+path = 'STAC_AVC/Images/CLIC/Testing/'
 dirs = os.listdir(path)
 num_images = 40
 random.seed(0)

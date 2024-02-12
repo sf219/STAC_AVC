@@ -33,7 +33,7 @@ def quality_to_factor(quality):
     return factor, delta
 
 def enc_cavlc(data, nL: int, nU: int):
-    mat_file = scipy.io.loadmat('data/table.mat')
+    mat_file = scipy.io.loadmat('STAC_AVC/data/table.mat')
     Table_coeff0 = mat_file['Table_coeff0']
     Table_coeff1 = mat_file['Table_coeff1']
     Table_coeff2 = mat_file['Table_coeff2']
