@@ -72,8 +72,8 @@ random.shuffle(dirs)
 dirs = dirs[:num_images]
 
 
-mse_vals = np.zeros((nqs, len(dirs)))
-ssim_vals = np.zeros_like(mse_vals)
+psnr_vals = np.zeros((nqs, len(dirs)))
+ssim_vals = np.zeros_like(psnr_vals)
 bits = []
 
 for i in range(num_images):
@@ -91,7 +91,7 @@ for i in range(num_images):
         comp_img_jpeg, bits_tmp = compress_AVC(qual_idx, img)
         bits_img_savc.append(bits_tmp)
 
-        mse_vals[j, i], ssim_vals[j, i] = evaluate_metrics(img, comp_img_jpeg)
+        psnr_vals[j, i], ssim_vals[j, i] = evaluate_metrics(img, comp_img_jpeg)
 
     bits.append(bits_img_savc)
 
@@ -99,12 +99,12 @@ for i in range(num_images):
 
     plt.figure(figsize=(20, 10))
     plt.subplot(1, 2, 1)
-    plt.plot(total_bits, mse_vals[:, i], label='AVC',linewidth=3)
+    plt.plot(total_bits, psnr_vals[:, i], label='AVC',linewidth=3)
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
     plt.legend(fontsize=16)
     plt.xlabel('Bits per pixel', fontsize=16)
-    plt.title('MSE', fontsize=16)
+    plt.title('PSNR', fontsize=16)
     plt.subplot(1, 2, 2)
     plt.plot(total_bits, ssim_vals[:, i], label='AVC', linewidth=3)
     plt.xlabel('Bits per pixel', fontsize=16)
