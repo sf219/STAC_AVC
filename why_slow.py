@@ -13,7 +13,7 @@ ssim_func = lambda x, y: -10*np.log10(ssim_mod(x, y))
 msssim_mod = lambda x, y: msssim(x, y)
 msssim_func = lambda x, y: -10*np.log10(msssim_mod(x, y))
 
-true_N = (512, 512)
+true_N = (128, 128)
 nqs = 8
 N = 8
 
@@ -74,60 +74,48 @@ def get_mean_format(data):
 
 path = 'STAC_AVC/Images/CLIC/Testing/'
 dirs = os.listdir(path)
-num_images = 40
+num_images = 1
 random.seed(0)
 random.shuffle(dirs)
 dirs = dirs[:num_images]
 
+def main():
+    psnr_vals = np.zeros((nqs, len(dirs)))
+    ssim_vals = np.zeros_like(psnr_vals)
+    msssim_vals = np.zeros_like(psnr_vals)
 
-psnr_vals = np.zeros((nqs, len(dirs)))
-ssim_vals = np.zeros_like(psnr_vals)
-msssim_vals = np.zeros_like(psnr_vals)
+    bits = []
 
-bits = []
+    for i in range(num_images):
+        fullpath = os.path.join(path,dirs[i])
+        img, depth = read_image_resize_rect(fullpath, true_N)
+        img = img[:, :, 0]
 
-for i in range(num_images):
-    fullpath = os.path.join(path,dirs[i])
-    img, depth = read_image_resize_rect(fullpath, true_N)
-    img = img[:, :, 0]
-    depth = 1
+        bits_img_savc = []
 
-    bits_img_savc = []
+        for j in range(nqs):
 
-    for j in range(nqs):
+            qual_idx = j
+            comp_img_jpeg, bits_tmp = compress_AVC(qual_idx, img)
+            bits_img_savc.append(bits_tmp)
 
-        qual_idx = j
-        comp_img_jpeg, bits_tmp = compress_AVC(qual_idx, img)
-        bits_img_savc.append(bits_tmp)
+            psnr_vals[j, i], ssim_vals[j, i], msssim_vals[j, i] = evaluate_metrics(img, comp_img_jpeg)
 
-        psnr_vals[j, i], ssim_vals[j, i], msssim_vals[j, i] = evaluate_metrics(img, comp_img_jpeg)
+        bits.append(bits_img_savc)
 
-    bits.append(bits_img_savc)
+        total_bits = np.array(bits_img_savc)/(img.shape[0]*img.shape[1])
 
-    total_bits = np.array(bits_img_savc)/(img.shape[0]*img.shape[1])
 
-    plt.figure(figsize=(20, 10))
-    plt.subplot(1, 3, 1)
-    plt.plot(total_bits, psnr_vals[:, i], label='AVC',linewidth=3)
-    plt.xticks(fontsize=16)
-    plt.yticks(fontsize=16)
-    plt.legend(fontsize=16)
-    plt.xlabel('Bits per pixel', fontsize=16)
-    plt.title('PSNR', fontsize=16)
-    plt.subplot(1, 3, 2)
-    plt.plot(total_bits, ssim_vals[:, i], label='AVC', linewidth=3)
-    plt.xlabel('Bits per pixel', fontsize=16)
-    plt.xticks(fontsize=16)
-    plt.yticks(fontsize=16)
-    plt.legend(fontsize = 16)
-    plt.title('SSIM', fontsize=16)
-    plt.subplot(1, 3, 3)
-    plt.plot(total_bits, msssim_vals[:, i], label='AVC', linewidth=3)
-    plt.xlabel('Bits per pixel', fontsize=16)
-    plt.xticks(fontsize=16)
-    plt.yticks(fontsize=16)
-    plt.legend(fontsize=16)
-    plt.title('MS-SSIM', fontsize=16)
-    plt.tight_layout()
-    str_out = 'sketch/simul_tmps/{}.pdf'.format(i)
-    plt.show()
+import cProfile, pstats, io
+from pstats import SortKey
+
+pr = cProfile.Profile()
+pr.enable()
+main()
+pr.disable()
+s = io.StringIO()
+sortby = SortKey.CUMULATIVE
+ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+ps.reverse_order().print_stats()
+print(s.getvalue())
+breakpoint()

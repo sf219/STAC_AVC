@@ -5,14 +5,15 @@ from PIL import Image, ImageOps
 import math
 from scipy.fftpack import dct, idct
 
+mat_file = scipy.io.loadmat('STAC_AVC/data/table.mat')
+Table_coeff0 = mat_file['Table_coeff0']
+Table_coeff1 = mat_file['Table_coeff1']
+Table_coeff2 = mat_file['Table_coeff2']
+Table_coeff3 = mat_file['Table_coeff3']
+Table_run = mat_file['Table_run']
+Table_zeros = mat_file['Table_zeros']
+
 def enc_cavlc(data, nL: int, nU: int):
-    mat_file = scipy.io.loadmat('STAC_AVC/data/table.mat')
-    Table_coeff0 = mat_file['Table_coeff0']
-    Table_coeff1 = mat_file['Table_coeff1']
-    Table_coeff2 = mat_file['Table_coeff2']
-    Table_coeff3 = mat_file['Table_coeff3']
-    Table_run = mat_file['Table_run']
-    Table_zeros = mat_file['Table_zeros']
 
     bits = ""
 
@@ -192,13 +193,6 @@ def enc_cavlc(data, nL: int, nU: int):
 def dec_cavlc(bits, nL, nU):
     # TODO: This is not working
     # Load the table containing all the tables
-    mat_file = scipy.io.loadmat('STAC_AVC/data/table.mat')
-    Table_coeff0 = mat_file['Table_coeff0']
-    Table_coeff1 = mat_file['Table_coeff1']
-    Table_coeff2 = mat_file['Table_coeff2']
-    Table_coeff3 = mat_file['Table_coeff3']
-    Table_run = mat_file['Table_run']
-    Table_zeros = mat_file['Table_zeros']
 
     # find n parameter (context adaptive)
     n = (nL + nU + 1) >> 1
