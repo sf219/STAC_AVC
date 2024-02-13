@@ -2,8 +2,10 @@ import numpy as np
 from STAC_AVC.utils_avc import enc_cavlc
 from STAC_AVC.AVC_transform import AVC_transform as transform
 
+
 def compute_sae(res_block, weights=1):
-    return np.sum(np.square(np.sqrt(weights)*res_block))
+    return np.sum(np.abs(np.sqrt(weights)*res_block))
+
 
 def most_probable_mode(modes, i, j):
     if (i > 0 and j > 0):
@@ -13,6 +15,7 @@ def most_probable_mode(modes, i, j):
     else:
         return False, 0 # it doesn't really matter
     return prev == modes[i, j], prev
+
 
 def enc_golomb(symbol, sign):
     bits = ''
@@ -85,18 +88,7 @@ class SAVC():
         bitstream += bits_frame
         # Calculate number of bits
         num_bits = len(bitstream)
-        num_bits += self.overhead_bits
         return Seq_r, num_bits, Res
-
-    # this is here for compatibility with the Q-GFT codec. I will remove.
-    def set_Q(self, img):
-        self.compute_class_Q_frame(img)
-
-    def compute_class_Q_frame(self, Seq):
-        h, w = Seq.shape
-        self.blk_class_4 = np.ones((h//self.b_size, w//self.b_size))
-        self.blk_class_16 = np.ones_like(self.blk_class_4)
-        self.blk_compress = np.zeros(((h//(2*self.b_size), w//(2*self.b_size))))
 
     def encode_i_frame(self, Seq):
         h, w = Seq.shape
@@ -126,7 +118,6 @@ class SAVC():
                     bits_frame += '1' + bits_frame1
                     Res_tmp = Res1
                     self.num_zeros = num_zeros_4
-                    self.blk_compress[idx//2:(idx//2)+2, jdx//2:(jdx//2)+2] = self.blk_class_4[idx:idx+4:2, jdx:jdx+4:2]
                 else:
                     Seq_r_tmp = Seq_r2
                     Pred_tmp = Pred2
@@ -134,18 +125,13 @@ class SAVC():
                     Res_tmp = Res2
                     self.modes_4[idx:idx+4, jdx:jdx+4] = 2
                     self.num_zeros = num_zeros_16
-                    self.blk_compress[idx//2:(idx//2)+2, jdx//2:(jdx//2)+2] = self.blk_class_16[idx, jdx]
 
                 self.Seq_r[i:i+self.mb_size, j:j+self.mb_size] = Seq_r_tmp
                 Pred[i:i+self.mb_size, j:j+self.mb_size] = Pred_tmp
                 Res[i:i+self.mb_size, j:j+self.mb_size] = Res_tmp
-        self.compress_Q()
         Seq_r = self.Seq_r[0:Seq.shape[0], 0:Seq.shape[1]]
         return Seq_r, Pred, bits_frame, Res
     
-    def compress_Q(self):
-        self.overhead_bits = 0
-
     def intra_4_mb(self, block, block_position):
         total_sae = 0
         bits_frame = ''
@@ -160,14 +146,10 @@ class SAVC():
 
         Seq_r_tmp = self.Seq_r.copy()
 
-        # decisions are made blockwise.
-        weights = np.ones((self.mb_size, self.mb_size))
         for i in range(0, self.mb_size, self.b_size):
             for j in range(0, self.mb_size, self.b_size):
                 cur_pos_mod_1 = (idx + i)//self.b_size
                 cur_pos_mod_2 = (jdx + j)//self.b_size
-                ind_weights = self.blk_class_4[cur_pos_mod_1, cur_pos_mod_2]
-                weights[i:i+4, j:j+4] = self.trans.get_weights(ind_weights)
     
 
         for i in range(0, self.mb_size, self.b_size):
@@ -177,10 +159,7 @@ class SAVC():
                 cur_pos_mod_2 = (jdx + j)//self.b_size
 
                 predpel = get_predpel_from_mtx(Seq_r_tmp, i+idx, j+jdx)
-                ind_weights = self.blk_class_4[cur_pos_mod_1, cur_pos_mod_2]
-
-                wh = weights[i:i+4, j:j+4]
-                icp, pred, sae, mode = predict_4_blk(blk, predpel, (idx+i, jdx+j), wh)
+                icp, pred, sae, mode = predict_4_blk(blk, predpel, (idx+i, jdx+j))
 
                 self.modes_4[cur_pos_mod_1, cur_pos_mod_2] = mode
                 
@@ -188,7 +167,7 @@ class SAVC():
 
                 icp_r_block, bits_b, num_zeros_4 = self.code_block_4(icp, num_zeros_4, cur_pos_mod_1, cur_pos_mod_2)
                 bits_frame += bits_b + bits_m
-                total_sae += compute_sae(icp_r_block + pred - blk, wh)
+                total_sae += compute_sae(icp_r_block + pred - blk)
                 Pred[i:i+self.b_size, j:j+self.b_size] = pred
                 Res[i:i+self.b_size, j:j+self.b_size] = icp
                 Seq_r[i:i+self.b_size, j:j+self.b_size] = icp_r_block + pred
@@ -203,17 +182,12 @@ class SAVC():
         jdx = block_position[1]
 
         num_zeros_16 = self.num_zeros.copy()
-
-        ind_weights = self.blk_class_16[idx//4, jdx//4]
-        weights = self.trans.get_weights(ind_weights)
-
         # stack weights in a 4x4 array
-        weights = np.tile(weights, (4, 4))
-        icp, pred, sae, mode = predict_16_blk(block, self.Seq_r, idx, jdx, weights)
+        icp, pred, sae, mode = predict_16_blk(block, self.Seq_r, idx, jdx)
         bits_m = mode_header_16(mode, idx, jdx)
         icp_r_block, bits_b, num_zeros_16 = self.code_block_16(icp, num_zeros_16, idx//4, jdx//4)
         bits_frame += bits_b + bits_m
-        total_sae += compute_sae(icp_r_block + pred - block, weights)
+        total_sae += compute_sae(icp_r_block + pred - block)
         Pred = pred
         Res = icp
         Seq_r = icp_r_block + pred
@@ -243,11 +217,11 @@ class SAVC():
         QP = self.QP
         idx = pos[0]
         idy = pos[1]
-        cp = self.trans.fwd_pass(blk, QP, ind=self.blk_class_4[idx, idy])
+        cp = self.trans.fwd_pass(blk, QP)
         num_zeros[idx, idy] = np.sum(np.abs(cp) != 0).astype(int)
         nL, nU = get_num_zeros(num_zeros, idx, idy)
         bits = enc_cavlc(cp, nL, nU)
-        err_r = self.trans.bck_pass(cp, QP, ind=self.blk_class_4[idx, idy])
+        err_r = self.trans.bck_pass(cp, QP)
         return err_r, bits, num_zeros
 
     def code_block_16(self, err, num_zeros_16, ix, jx):
@@ -262,14 +236,13 @@ class SAVC():
         c_dc = np.zeros((b_size, b_size))
         for i in range(0, n, b_size):
             for j in range(0, m, b_size):
-                class_label = self.blk_class_16[ix + i//b_size, jx + j//b_size]
-                c = self.trans.integer_transform(err[i:i+b_size, j:j+b_size], ind=class_label)
-                cq[i:i+b_size, j:j+b_size] = self.trans.quantization(c, QP, ind=class_label)
+                c = self.trans.integer_transform(err[i:i+b_size, j:j+b_size])
+                cq[i:i+b_size, j:j+b_size] = self.trans.quantization(c, QP)
                 c_dc[i//b_size, j//b_size] = c[0, 0]
 
         #c_dc = c[0::4, 0::4]
         c_dc = self.trans.secondary_integer_transform(c_dc)
-        c_dc_q = self.trans.secondary_quantization(c_dc, QP, ind=self.blk_class_16[ix, jx])
+        c_dc_q = self.trans.secondary_quantization(c_dc, QP)
 
         for i in range(0, n, b_size):
             for j in range(0, m, b_size):
@@ -285,8 +258,7 @@ class SAVC():
         for i in range(0, n, b_size):
             for j in range(0, m, b_size):
                 blk = cq[i:i+b_size, j:j+b_size]
-                class_label = self.blk_class_16[ix + i//b_size, jx + j//b_size]
-                err_r[i:i+b_size, j:j+b_size] = self.trans.bck_pass(blk, QP, ind=class_label)
+                err_r[i:i+b_size, j:j+b_size] = self.trans.bck_pass(blk, QP)
         return err_r, bits, num_zeros_16
 
 
@@ -335,7 +307,7 @@ def get_num_zeros(num_zeros_mtx, ix, jx):
     return nL, nU
 
 
-def predict_4_blk(blk, predpel, pos, weights):
+def predict_4_blk(blk, predpel, pos):
     xpos = pos[0]
     ypos = pos[1]
 
@@ -369,7 +341,7 @@ def predict_4_blk(blk, predpel, pos, weights):
             sae = sae_2
             mode = 2
     else:
-        icp, pred, sae, mode = mode_select_4_blk(blk, predpel, weights)
+        icp, pred, sae, mode = mode_select_4_blk(blk, predpel)
     return icp, pred, sae, mode
 
 # X A B C D E F G H 
@@ -599,7 +571,7 @@ def no_pred_16(Seq, i, j):
     return icp, pred, sae
 
 
-def predict_16_blk(blk, Seq_r, i, j, weights):
+def predict_16_blk(blk, Seq_r, i, j):
     if i == 0 and j == 0:  # No prediction
         mode = 4  # Special mode to describe no prediction
         icp, pred, sae = no_pred_blk(blk)
@@ -630,7 +602,7 @@ def predict_16_blk(blk, Seq_r, i, j, weights):
             sae = sae_2
             mode = 2
     else:  # Try all different prediction
-        icp, pred, sae, mode = mode_select_16_blk(blk, Seq_r, i, j, weights)  
+        icp, pred, sae, mode = mode_select_16_blk(blk, Seq_r, i, j)  
     return icp, pred, sae, mode
 
 
@@ -691,7 +663,7 @@ def pred_plane_16_blk(blk, Seq_r, i, j):
 
 
 # Mode selection for 16x16 prediction
-def mode_select_16_blk(blk, Seq_r, i, j, weights):
+def mode_select_16_blk(blk, Seq_r, i, j):
     icp1, pred1, sae1 = pred_vert_16_blk(blk, Seq_r, i, j)
     icp2, pred2, sae2 = pred_horz_16_blk(blk, Seq_r, i, j)
     icp3, pred3, sae3 = pred_dc_16_blk(blk, Seq_r, i, j)

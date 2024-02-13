@@ -92,7 +92,6 @@ for i in range(num_images):
     img = img[:, :, 0]
     depth = 1
 
-    savc.set_Q(img)
     bits_img_savc = []
 
     for j in range(nqs):
