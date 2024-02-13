@@ -1,6 +1,6 @@
 import numpy as np
 from STAC_AVC.utils_avc import enc_cavlc
-from STAC_AVC.AVC_transform import nint_AVC_transform as transform
+from STAC_AVC.AVC_transform import AVC_transform as transform
 from numba import njit
 
 
@@ -229,7 +229,7 @@ class SAVC():
         idx = pos[0]
         idy = pos[1]
         cp = self.trans.fwd_pass(blk, QP)
-        num_zeros[idx, idy] = np.sum(np.abs(cp) != 0).astype(int)
+        num_zeros[idx, idy] = np.count_nonzero(cp)
         nL, nU = get_num_zeros(num_zeros, idx, idy)
         bits = enc_cavlc(cp, nL, nU)
         err_r = self.trans.bck_pass(cp, QP)
@@ -243,7 +243,7 @@ class SAVC():
         err_r = np.zeros((n, m))
         bits = ''
 
-        cq = np.zeros((n, m)).astype(int)
+        cq = np.zeros((n, m), dtype=int)
         c_dc = np.zeros((b_size, b_size))
         for i in range(0, n, b_size):
             for j in range(0, m, b_size):
@@ -259,7 +259,7 @@ class SAVC():
             for j in range(0, m, b_size):
                 cq_tmp = cq[i:i+b_size, j:j+b_size]
                 cq_tmp[0, 0] = c_dc_q[i//b_size, j//b_size]
-                num_zeros_16[ix + i//b_size, jx + j//b_size] = np.sum(np.abs(cq_tmp) != 0).astype(int)
+                num_zeros_16[ix + i//b_size, jx + j//b_size] = np.count_nonzero(cq_tmp)
                 idx = ix + i//b_size
                 jdx = jx + j//b_size
                 nL, nU = get_num_zeros(num_zeros_16, idx, jdx)
@@ -402,7 +402,7 @@ def pred_vert_4_blk(blk, predpel):
 
 
 def pred_dc_4_blk(blk, predpel):
-    pred = (np.sum(predpel[1:5]) + np.sum(predpel[9:]) + 4).astype(int) >> 3
+    pred = (np.sum(predpel[1:5]) + np.sum(predpel[9:]) + 4) >> 3
     icp = blk - pred
     sae = compute_sae(icp)
     return icp, pred, sae
@@ -522,6 +522,8 @@ def no_pred_4(Seq, i, j):
 
 
 def mode_select_4_blk(blk, predpel, weights=1):
+    blk = blk.copy().astype(int)
+    predpel = predpel.copy().astype(int)
     icp1, pred1, sae1 = pred_vert_4_blk(blk, predpel)
     icp2, pred2, sae2 = pred_horz_4_blk(blk, predpel)
     icp3, pred3, sae3 = pred_dc_4_blk(blk, predpel)
@@ -645,7 +647,7 @@ def pred_vert_16_blk(blk, Seq_r, i, j):
 
 # 16x16 DC prediction
 def pred_dc_16_blk(blk, Seq_r, i, j):
-    pred = (np.sum(Seq_r[i-1, j:j+16]) + np.sum(Seq_r[i:i+16, j-1]) + 16).astype(int) >> 5
+    pred = (np.sum(Seq_r[i-1, j:j+16]) + np.sum(Seq_r[i:i+16, j-1]) + 16) >> 5
     icp = blk - pred
     sae = compute_sae(icp)
     return icp, pred, sae
@@ -655,9 +657,6 @@ def pred_plane_16_blk(blk, Seq_r, i, j):
     H = np.sum((np.arange(8) + 1) * (Seq_r[i + np.arange(8) + 8, j - 1] - Seq_r[i + 6 - np.arange(8), j - 1]))
     V = np.sum((np.arange(8) + 1) * (Seq_r[i - 1, j + np.arange(8) + 8] - Seq_r[i - 1, j + 6 - np.arange(8)]))
 
-    H = H.astype(int)
-    V = V.astype(int)
-
     a = 16 * (Seq_r[i - 1, j + 15] + Seq_r[i + 15, j - 1])
     b = (5*H + 32) >> 6
     c = (5*V + 32) >> 6
@@ -666,7 +665,7 @@ def pred_plane_16_blk(blk, Seq_r, i, j):
 
     for m in range(16):
         for n in range(16):
-            d = (a + b * (m - 7) + c * (n - 7) + 16).astype(int) >> 5
+            d = (a + b * (m - 7) + c * (n - 7) + 16) >> 5
             pred[m, n] = max(0, min(255, d))
     icp = blk - pred
     sae = compute_sae(icp)
@@ -675,6 +674,8 @@ def pred_plane_16_blk(blk, Seq_r, i, j):
 
 # Mode selection for 16x16 prediction
 def mode_select_16_blk(blk, Seq_r, i, j):
+    blk = blk.copy().astype(int)
+    Seq_r = Seq_r.copy().astype(int)
     icp1, pred1, sae1 = pred_vert_16_blk(blk, Seq_r, i, j)
     icp2, pred2, sae2 = pred_horz_16_blk(blk, Seq_r, i, j)
     icp3, pred3, sae3 = pred_dc_16_blk(blk, Seq_r, i, j)

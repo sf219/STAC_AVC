@@ -44,12 +44,13 @@ def enc_cavlc(data, nL: int, nU: int):
     i_trailing = 0
     sign = ""  # find sign for trailing ones
     idx = 0
-    run = np.zeros(0)
-    level = np.zeros(0)
+
+    run_list = []
+    level_list = []
 
     # find level, trailing ones(sign), run, and total zero values
     while i_last > 0 and abs(l[i_last - 1]) == 1 and i_trailing < 3:
-        level = np.append(level, l[i_last - 1])
+        level_list.append(l[i_last - 1])
         i_total += 1
         i_trailing += 1
 
@@ -64,11 +65,11 @@ def enc_cavlc(data, nL: int, nU: int):
             run_tmp += 1
             i_total_zero += 1
             i_last -= 1
-        run = np.append(run, run_tmp)
+        run_list.append(run_tmp)
         idx += 1
 
     while i_last > 0:
-        level = np.append(level, l[i_last - 1])
+        level_list.append(l[i_last - 1])
         i_total += 1
 
         run_tmp = 0
@@ -77,7 +78,7 @@ def enc_cavlc(data, nL: int, nU: int):
             run_tmp += 1
             i_total_zero += 1
             i_last -= 1
-        run = np.append(run, run_tmp)
+        run_list.append(run_tmp)
         idx += 1
 
     n = (nL + nU + 1) >> 1
@@ -111,23 +112,23 @@ def enc_cavlc(data, nL: int, nU: int):
     else:
         i_sufx_len = 0
     for i in range(i_trailing, i_total):
-        if level[i] < 0:
-            i_level_code = -2 * level[i] - 1
+        if level_list[i] < 0:
+            i_level_code = -2 * level_list[i] - 1
         else:
-            i_level_code = 2 * level[i] - 2
+            i_level_code = 2 * level_list[i] - 2
 
         if i == i_trailing and i_trailing < 3:
             i_level_code -= 2
 
-        if (i_level_code.astype(int) >> i_sufx_len) < 14:
-            level_prfx = i_level_code.astype(int) >> i_sufx_len
+        if (i_level_code >> i_sufx_len) < 14:
+            level_prfx = i_level_code >> i_sufx_len
             while level_prfx > 0:
                 bits += "0"
                 level_prfx -= 1
             bits += "1"
 
             if i_sufx_len > 0:
-                tmp_bin = bin(i_level_code.astype(int))[2:]
+                tmp_bin = bin(i_level_code)[2:]
                 level_sufx = tmp_bin[-i_sufx_len:].zfill(i_sufx_len)
                 x = len(level_sufx)
                 if (x > i_sufx_len):
@@ -140,17 +141,17 @@ def enc_cavlc(data, nL: int, nU: int):
                 bits += "0"
                 level_prfx -= 1
             bits += "1"
-            tmp_bin = bin(i_level_code.astype(int) - 14)[2:]
+            tmp_bin = bin(i_level_code - 14)[2:]
             level_sufx = tmp_bin[-4:].zfill(4)
             bits += level_sufx
 
-        elif i_sufx_len > 0 and (i_level_code.astype(int) >> i_sufx_len) == 14:
+        elif i_sufx_len > 0 and (i_level_code >> i_sufx_len) == 14:
             level_prfx = 14
             while level_prfx > 0:
                 bits += "0"
                 level_prfx -= 1
             bits += "1"
-            tmp_bin = bin(i_level_code.astype(int))[2:]
+            tmp_bin = bin(i_level_code)[2:]
             level_sufx = tmp_bin[-i_sufx_len:].zfill(i_sufx_len)            
             bits += level_sufx
 
@@ -169,7 +170,7 @@ def enc_cavlc(data, nL: int, nU: int):
             if i_level_code >= 2 ** 12 or i_level_code < 0:
                 print("Overflow occurred")
 
-            tmp_bin = bin(i_level_code.astype(int))[2:]
+            tmp_bin = bin(i_level_code)[2:]
             level_sufx = tmp_bin[-12:].zfill(12)
             x = len(level_sufx)
             if (x > 12):
@@ -179,7 +180,7 @@ def enc_cavlc(data, nL: int, nU: int):
         if i_sufx_len == 0:
             i_sufx_len += 1
         thres = 3 << i_sufx_len-1
-        if abs(level[i]) > thres and i_sufx_len < 6:
+        if abs(level_list[i]) > thres and i_sufx_len < 6:
             i_sufx_len += 1
 
     # Encode Total zeros
@@ -193,10 +194,10 @@ def enc_cavlc(data, nL: int, nU: int):
             if i_zero_left > 0 and (i+1) == i_total:
                 break
             if i_zero_left >= 1:
-                i_zl = int(min(i_zero_left, 7))
-                run_before = Table_run[run[i].astype(int)][i_zl-1]
+                i_zl = min(i_zero_left, 7)
+                run_before = Table_run[run_list[i]][i_zl-1]
                 bits += str(run_before[0])
-                i_zero_left -= run[i]
+                i_zero_left -= run_list[i]
     return bits
 
 
