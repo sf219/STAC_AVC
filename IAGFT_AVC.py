@@ -2,7 +2,7 @@ from scipy.stats import mode
 from STAC_AVC.IAGFT_transform import base_iagft_transform as perceptual_transform
 from STAC_AVC.SAVC import SAVC
 from STAC_AVC.utils_avc import enc_cavlc
-from STAC_AVC.SAVC import get_predpel_from_mtx, predict_4_blk, predict_16_blk, mode_header_4, mode_header_16, get_num_zeros
+from STAC_AVC.SAVC import most_probable_mode, enc_golomb
 import numpy as np
 from numba import njit
 
@@ -19,6 +19,7 @@ class IAGFT_AVC(SAVC):
 
     def __init__(self, nqs, compute_Q_obj, q_ops_obj, flag_sae=False, flag_uniform=True):
         super().__init__(nqs, flag_uniform=flag_uniform, flag_sae=flag_sae)
+        self.qsnu = np.linspace(3.25*nqs, 4.5*nqs, nqs) # In this range, PSNR is between 30 and 40 typically
         self.compute_Q_obj = compute_Q_obj
         self.q_ops_obj = q_ops_obj  
         self.trans = perceptual_transform(compute_Q_obj, q_ops_obj=q_ops_obj, flag_uniform=flag_uniform)
@@ -28,7 +29,7 @@ class IAGFT_AVC(SAVC):
             self.distortion_function = lambda x, y: compute_sse(x, y)
 
     def set_Q(self, Seq):
-        self.h, self.w = Seq.shape        
+        self.h, self.w = Seq.shape
         img_quan = 2*Seq/255
         self.Qmtx = self.compute_Q_obj.sample_q(Seq)
         self.Qmtx = self.q_ops_obj.normalize_q(self.Qmtx)
@@ -48,7 +49,7 @@ class IAGFT_AVC(SAVC):
 
     def set_quantization_parameters(self, ind_quality):
         self.QP = self.qsnu[ind_quality]
-        self.lam = 0.85 * ((2**((self.QP-12)//3)) * 0.5)**2 # taken from FHHI
+        self.lam = 0.85 * ((2**((self.QP-12)//3)) * 0.5) # taken from FHHI
         if self.flag_sae:
             self.lam = np.sqrt(self.lam)
 
@@ -144,11 +145,13 @@ class IAGFT_AVC(SAVC):
 
                 ind_weights = self.blk_class_4[cur_pos_mod_1, cur_pos_mod_2]
                 weights[i:i+4, j:j+4] = self.trans.get_weights(ind_weights)
-
+                
                 predpel = get_predpel_from_mtx(Seq_r_tmp, i+idx, j+jdx)
                 wh = weights[i:i+4, j:j+4]
 
-                icp, pred, sae, mode = predict_4_blk(blk, predpel, (idx+i, jdx+j))
+                wh_pred = self.Qmtx[idx+i:idx+i+4, jdx+j:jdx+j+4]
+
+                icp, pred, sae, mode = predict_4_blk(blk, predpel, (idx+i, jdx+j), wh_pred)
 
                 self.modes_4[cur_pos_mod_1, cur_pos_mod_2] = mode
                 
@@ -177,8 +180,10 @@ class IAGFT_AVC(SAVC):
         weights = np.tile(weights, (4, 4))
 
         num_zeros_16 = self.num_zeros.copy()
+
+        wh_pred = self.Qmtx[idx:idx+16, jdx:jdx+16]
         # stack weights in a 4x4 array
-        icp, pred, sae, mode = predict_16_blk(block, self.Seq_r, idx, jdx)
+        icp, pred, sae, mode = predict_16_blk(block, self.Seq_r, idx, jdx, wh_pred)
         bits_m = mode_header_16(mode, idx, jdx)
         icp_r_block, bits_b, num_zeros_16 = self.code_block_16(icp, num_zeros_16, idx//4, jdx//4)
         bits_frame += bits_b + bits_m
@@ -258,3 +263,412 @@ class IAGFT_AVC(SAVC):
                 err_r[i:i+b_size, j:j+b_size] = self.trans.bck_pass(blk, QP, ind=class_label)
         return err_r, bits, num_zeros_16
 
+
+
+def mode_header_4(modes_4, posx, posy):
+    b_size = 4
+    cur_pos_mod_1 = (posx)//b_size
+    cur_pos_mod_2 = (posy)//b_size
+    mode = modes_4[cur_pos_mod_1, cur_pos_mod_2]
+    flag_most_prob, most_prob = most_probable_mode(modes_4, cur_pos_mod_1, cur_pos_mod_2)
+    if flag_most_prob:
+        bits_m = '1'
+    else:
+        if ((posx) != 0 and (posy) != 0):
+            bits_m = '0'
+            if mode < most_prob:
+                bits_m += enc_golomb(mode, 0)
+            else:
+                bits_m += enc_golomb(mode-1, 0)
+        elif ((posx) == 0 and (posy) == 0):
+            bits_m = ''     
+        else:
+            bits_m = '1'    # because we have two options for the vertical/horizontal blocks
+    return bits_m
+
+
+def mode_header_16(mode, idx, jdx):
+    if (idx != 0 and jdx != 0):
+        bits_m = enc_golomb(mode, 0)
+    elif (idx == 0 and jdx == 0):
+        bits_m = ''
+    else:
+        bits_m = '0'
+    return bits_m
+
+
+def get_num_zeros(num_zeros_mtx, ix, jx):
+    if ix == 0 and jx == 0:
+        nL = nU = 14
+    elif ix == 0:
+        nL = nU = num_zeros_mtx[ix, jx - 1]
+    elif jx == 0:
+        nU = nL = num_zeros_mtx[ix - 1, jx]
+    else:
+        nL = num_zeros_mtx[ix, jx - 1]
+        nU = num_zeros_mtx[ix - 1, jx]
+    return nL, nU
+
+
+def predict_4_blk(blk, predpel, pos, wh=1):
+    xpos = pos[0]
+    ypos = pos[1]
+
+    if (xpos) == 0 and (ypos) == 0:
+        mode = 9
+        icp, pred, sae = no_pred_blk(blk)
+    elif (xpos) == 0:
+        mode = 1
+        icp_1, pred_1, sae_1 = pred_horz_4_blk(blk, predpel, wh)
+        icp_2, pred_2, sae_2 = pred_dc_4_blk(blk, 2*predpel, wh)
+        if sae_1 < sae_2:
+            icp = icp_1
+            pred = pred_1
+            sae = sae_1
+        else:
+            icp = icp_2
+            pred = pred_2
+            sae = sae_2
+            mode = 2
+    elif (ypos) == 0:
+        mode = 0
+        icp_1, pred_1, sae_1 = pred_vert_4_blk(blk, predpel, wh)
+        icp_2, pred_2, sae_2 = pred_dc_4_blk(blk, 2*predpel, wh)
+        if sae_1 < sae_2:
+            icp = icp_1
+            pred = pred_1
+            sae = sae_1
+        else:
+            icp = icp_2
+            pred = pred_2
+            sae = sae_2
+            mode = 2
+    else:
+        icp, pred, sae, mode = mode_select_4_blk(blk, predpel, wh)
+    return icp, pred, sae, mode
+
+# X A B C D E F G H 
+# I a b c d
+# J e f g h
+# K i j k l
+# L m n o p
+
+def get_predpel_from_mtx(Seq_r, i, j):
+    pred_pel = np.zeros(13, dtype=int)
+    if i > 0 and j > 0:
+        pred_pel[0] = Seq_r[i-1, j-1]  # X
+    if i > 0:
+        pred_pel[1] = Seq_r[i-1, j]    # A
+        pred_pel[2] = Seq_r[i-1, j+1]  # B
+        pred_pel[3] = Seq_r[i-1, j+2]  # C
+        pred_pel[4] = Seq_r[i-1, j+3]  # D
+        pred_pel[5] = Seq_r[i-1, j+3]  # E
+        pred_pel[6] = Seq_r[i-1, j+3]  # F
+        pred_pel[7] = Seq_r[i-1, j+3]  # G
+        pred_pel[8] = Seq_r[i-1, j+3]  # H
+    if j > 0:
+        pred_pel[9] = Seq_r[i, j-1]    # I
+        pred_pel[10] = Seq_r[i+1, j-1] # J
+        pred_pel[11] = Seq_r[i+2, j-1] # K
+        pred_pel[12] = Seq_r[i+3, j-1] # L
+    return pred_pel
+
+
+def pred_horz_4_blk(blk, predpel, wh):
+    P_I = predpel[9:]
+    pred = np.zeros((4, 4), dtype=int)
+    for i in range(4):
+        pred[i][0] = pred[i][1] = pred[i][2] = pred[i][3] = P_I[i]
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+def pred_vert_4_blk(blk, predpel, wh):
+    selection = predpel[1:5]
+    tmp = np.reshape(selection, (1, len(selection)))
+    pred = np.tile(tmp, (4, 1))
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+def pred_dc_4_blk(blk, predpel, wh):
+    pred = (np.sum(predpel[1:5]) + np.sum(predpel[9:]) + 4) >> 3
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+def pred_ddl_4_blk(blk, predpel, wh):
+    P_A, P_B, P_C, P_D, P_E, P_F, P_G, P_H = predpel[1:9]
+    pred = np.zeros((4, 4), dtype=int)
+    pred[0][0] = (P_A + P_C + 2 * P_B + 2) >> 2
+    pred[0][1] = pred[1][0] = (P_B + P_D + 2 * P_C + 2) >> 2
+    pred[0][2] = pred[1][1] = pred[2][0] = (P_C + P_E + 2 * P_D + 2) >> 2
+    pred[0][3] = pred[1][2] = pred[2][1] = pred[3][0] = (P_D + P_F + 2 * P_E + 2) >> 2
+    pred[1][3] = pred[2][2] = pred[3][1] = (P_E + P_G + 2 * P_F + 2) >> 2
+    pred[2][3] = pred[3][2] = (P_F + P_H + 2 * P_G + 2) >> 2
+    pred[3][3] = (P_G + 3 * P_H + 2) >> 2
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+def pred_ddr_4_blk(blk, predpel, wh):
+    P_A, P_B, P_C, P_D = predpel[1:5]
+    P_I, P_J, P_K, P_L = predpel[9:]
+    P_X = predpel[0]
+    pred = np.zeros((4, 4), dtype=int)
+    pred[3][0] = (P_L + 2 * P_K + P_J + 2) >> 2
+    pred[2][0] = pred[3][1] = (P_K + 2 * P_J + P_I + 2) >> 2
+    pred[1][0] = pred[2][1] = pred[3][2] = (P_J + 2 * P_I + P_X + 2) >> 2
+    pred[0][0] = pred[1][1] = pred[2][2] = pred[3][3] = (P_I + 2 * P_X + P_A + 2) >> 2
+    pred[0][1] = pred[1][2] = pred[2][3] = (P_X + 2 * P_A + P_B + 2) >> 2
+    pred[0][2] = pred[1][3] = (P_A + 2 * P_B + P_C + 2) >> 2
+    pred[0][3] = (P_B + 2 * P_C + P_D + 2) >> 2
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+def pred_vr_4_blk(blk, predpel, wh):
+    P_A, P_B, P_C, P_D = predpel[1:5]
+    P_I, P_J, P_K, P_L = predpel[9:]
+    P_X = predpel[0]
+    pred = np.zeros((4, 4), dtype=int)
+    pred[0][0] = pred[2][1] = (P_X + P_A + 1) >> 1
+    pred[0][1] = pred[2][2] = (P_A + P_B + 1) >> 1
+    pred[0][2] = pred[2][3] = (P_B + P_C + 1) >> 1
+    pred[0][3] = (P_C + P_D + 1) >> 1
+    pred[1][0] = pred[3][1] = (P_I + 2 * P_X + P_A + 2) >> 2
+    pred[1][1] = pred[3][2] = (P_X + 2 * P_A + P_B + 2) >> 2
+    pred[1][2] = pred[3][3] = (P_A + 2 * P_B + P_C + 2) >> 2
+    pred[1][3] = (P_B + 2 * P_C + P_D + 2) >> 2
+    pred[2][0] = (P_X + 2 * P_I + P_J + 2) >> 2
+    pred[3][0] = (P_I + 2 * P_J + P_K + 2) >> 2
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+def pred_hd_4_blk(blk, predpel, wh):
+    P_A, P_B, P_C, P_D = predpel[1:5]
+    P_I, P_J, P_K, P_L = predpel[9:]
+    P_X = predpel[0]
+    pred = np.zeros((4, 4), dtype=int)
+    pred[0][0] = pred[1][2] = (P_X + P_I + 1) >> 1
+    pred[0][1] = pred[1][3] = (P_I + 2 * P_X + P_A + 2) >> 2
+    pred[0][2] = (P_X + 2 * P_A + P_B + 2) >> 2
+    pred[0][3] = (P_A + 2 * P_B + P_C + 2) >> 2
+    pred[1][0] = pred[2][2] = (P_I + P_J + 1) >> 1
+    pred[1][1] = pred[2][3] = (P_X + 2 * P_I + P_J + 2) >> 2
+    pred[2][0] = pred[3][2] = (P_J + P_K + 1) >> 1
+    pred[2][1] = pred[3][3] = (P_I + 2 * P_J + P_K + 2) >> 2
+    pred[3][0] = (P_K + P_L + 1) >> 1
+    pred[3][1] = (P_J + 2 * P_K + P_L + 2) >> 2
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+def pred_vl_4_blk(blk, predpel, wh):
+    P_A, P_B, P_C, P_D = predpel[1:5]
+    P_E, P_F, P_G, P_H = predpel[5:9]
+    pred = np.zeros((4, 4), dtype=int)
+    pred[0][0] = (P_A + P_B + 1) >> 1
+    pred[0][1] = pred[2][0] = (P_B + P_C + 1) >> 1
+    pred[0][2] = pred[2][1] = (P_C + P_D + 1) >> 1
+    pred[0][3] = pred[2][2] = (P_D + P_E + 1) >> 1
+    pred[2][3] = (P_E + P_F + 1) >> 1
+    pred[1][0] = (P_A + 2 * P_B + P_C + 2) >> 2
+    pred[1][1] = pred[3][0] = (P_B + 2 * P_C + P_D + 2) >> 2
+    pred[1][2] = pred[3][1] = (P_C + 2 * P_D + P_E + 2) >> 2
+    pred[1][3] = pred[3][2] = (P_D + 2 * P_E + P_F + 2) >> 2
+    pred[3][3] = (P_E + 2 * P_F + P_G + 2) >> 2
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+def pred_hu_4_blk(blk, predpel, wh):
+    P_I, P_J, P_K, P_L = predpel[9:]
+    pred = np.zeros((4, 4), dtype=int)
+    pred[0][0] = (P_I + P_J + 1) >> 1
+    pred[0][1] = (P_I + 2 * P_J + P_K + 2) >> 2
+    pred[0][2] = pred[1][0] = (P_J + P_K + 1) >> 1
+    pred[0][3] = pred[1][1] = (P_J + 2 * P_K + P_L + 2) >> 2
+    pred[1][2] = pred[2][0] = (P_K + P_L + 1) >> 1
+    pred[1][3] = pred[2][1] = (P_K + 2 * P_L + P_L + 2) >> 2
+    pred[3][0] = pred[2][2] = pred[2][3] = pred[3][1] = pred[3][2] = pred[3][3] = P_L
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+def mode_select_4_blk(blk, predpel, wh=1):
+    blk = blk.copy().astype(int)
+    predpel = predpel.copy().astype(int)
+    icp1, pred1, sae1 = pred_vert_4_blk(blk, predpel, wh)
+    icp2, pred2, sae2 = pred_horz_4_blk(blk, predpel, wh)
+    icp3, pred3, sae3 = pred_dc_4_blk(blk, predpel, wh)
+    icp4, pred4, sae4 = pred_ddl_4_blk(blk, predpel, wh)
+    icp5, pred5, sae5 = pred_ddr_4_blk(blk, predpel, wh)
+    icp6, pred6, sae6 = pred_vr_4_blk(blk, predpel, wh)
+    icp7, pred7, sae7 = pred_hd_4_blk(blk, predpel, wh)
+    icp8, pred8, sae8 = pred_vl_4_blk(blk, predpel, wh)
+    icp9, pred9, sae9 = pred_hu_4_blk(blk, predpel, wh)
+
+    sae_values = [sae1, sae2, sae3, sae4, sae5, sae6, sae7, sae8, sae9]
+    min_sae_index = np.argmin(sae_values)
+    sae = sae_values[min_sae_index]
+    modes = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    mode = modes[min_sae_index]
+
+    if mode == 0:
+        icp = icp1
+        pred = pred1
+    elif mode == 1:
+        icp = icp2
+        pred = pred2
+    elif mode == 2:
+        icp = icp3
+        pred = pred3
+    elif mode == 3:
+        icp = icp4
+        pred = pred4
+    elif mode == 4:
+        icp = icp5
+        pred = pred5
+    elif mode == 5:
+        icp = icp6
+        pred = pred6
+    elif mode == 6:
+        icp = icp7
+        pred = pred7
+    elif mode == 7:
+        icp = icp8
+        pred = pred8
+    elif mode == 8:
+        icp = icp9
+        pred = pred9
+    return icp, pred, sae, mode
+
+
+def no_pred_blk(blk):
+    icp = blk
+    pred = np.zeros_like(blk, dtype=int)
+    sae = compute_sse(icp, 1)
+    return icp, pred, sae
+
+
+def predict_16_blk(blk, Seq_r, i, j, wh=1):
+    if i == 0 and j == 0:  # No prediction
+        mode = 4  # Special mode to describe no prediction
+        icp, pred, sae = no_pred_blk(blk)
+    elif i == 0:  # Horizontal prediction
+        mode = 1
+        icp_1, pred_1, sae_1 = pred_horz_16_blk(blk, Seq_r, i, j, wh)
+        icp_2, pred_2, sae_2 = pred_horz_16_dc(blk, Seq_r, i, j, wh)
+        if sae_1 < sae_2:
+            icp = icp_1
+            pred = pred_1
+            sae = sae_1
+        else:
+            icp = icp_2
+            pred = pred_2
+            sae = sae_2
+            mode = 2
+    elif j == 0:  # Vertical prediction
+        mode = 0
+        icp_1, pred_1, sae_1 = pred_vert_16_blk(blk, Seq_r, i, j, wh)
+        icp_2, pred_2, sae_2 = pred_vert_16_dc(blk, Seq_r, i, j, wh)
+        if sae_1 < sae_2:
+            icp = icp_1
+            pred = pred_1
+            sae = sae_1
+        else:
+            icp = icp_2
+            pred = pred_2
+            sae = sae_2
+            mode = 2
+    else:  # Try all different prediction
+        icp, pred, sae, mode = mode_select_16_blk(blk, Seq_r, i, j, wh)  
+    return icp, pred, sae, mode
+
+
+def pred_horz_16_dc(blk, Seq_r, i, j, wh):
+    pred = np.mean(Seq_r[i:i+16, j-1])
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+def pred_vert_16_dc(blk, Seq_r, i, j, wh):
+    pred = np.mean(Seq_r[i-1, j:j+16])
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+# 16x16 Horizontal prediction
+def pred_horz_16_blk(blk, Seq_r, i, j, wh):
+    pred = Seq_r[i:i+16, j-1].reshape(16, 1).dot(np.ones((1, 16)))
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+# 16x16 Vertical prediction
+def pred_vert_16_blk(blk, Seq_r, i, j, wh):
+    pred = np.ones((16, 1)).dot(Seq_r[i-1, j:j+16].reshape(1, 16))
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+# 16x16 DC prediction
+def pred_dc_16_blk(blk, Seq_r, i, j, wh):
+    pred = (np.sum(Seq_r[i-1, j:j+16]) + np.sum(Seq_r[i:i+16, j-1]) + 16) >> 5
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+def pred_plane_16_blk(blk, Seq_r, i, j, wh):
+    H = np.sum((np.arange(8) + 1) * (Seq_r[i + np.arange(8) + 8, j - 1] - Seq_r[i + 6 - np.arange(8), j - 1]))
+    V = np.sum((np.arange(8) + 1) * (Seq_r[i - 1, j + np.arange(8) + 8] - Seq_r[i - 1, j + 6 - np.arange(8)]))
+
+    a = 16 * (Seq_r[i - 1, j + 15] + Seq_r[i + 15, j - 1])
+    b = (5*H + 32) >> 6
+    c = (5*V + 32) >> 6
+
+    pred = np.empty((16, 16), dtype=int)
+
+    for m in range(16):
+        for n in range(16):
+            d = (a + b * (m - 7) + c * (n - 7) + 16) >> 5
+            pred[m, n] = max(0, min(255, d))
+    icp = blk - pred
+    sae = compute_sse(icp, wh)
+    return icp, pred, sae
+
+
+# Mode selection for 16x16 prediction
+def mode_select_16_blk(blk, Seq_r, i, j, wh):
+    blk = blk.copy().astype(int)
+    Seq_r = Seq_r.copy().astype(int)
+    icp1, pred1, sae1 = pred_vert_16_blk(blk, Seq_r, i, j, wh)
+    icp2, pred2, sae2 = pred_horz_16_blk(blk, Seq_r, i, j, wh)
+    icp3, pred3, sae3 = pred_dc_16_blk(blk, Seq_r, i, j, wh)
+    icp4, pred4, sae4 = pred_plane_16_blk(blk, Seq_r, i, j, wh)
+
+    sae_values = [sae1, sae2, sae3, sae4]
+    min_sae_idx = sae_values.index(min(sae_values))
+
+    modes = {
+        0: (sae1, icp1, pred1),
+        1: (sae2, icp2, pred2),
+        2: (sae3, icp3, pred3),
+        3: (sae4, icp4, pred4)
+    }
+
+    sae, icp, pred = modes[min_sae_idx]
+    mode = min_sae_idx
+    return icp, pred, sae, mode

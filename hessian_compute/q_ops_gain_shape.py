@@ -32,6 +32,7 @@ class q_ops():
         self.n_cwds_or_means = [1, 2, 3, 4, 5, 6]
         self.n_cwds_or_shapes = [1, 2, 3]
         self.n_cwds = [(1, 2), (1, 3), (2, 1), (2, 2), (2, 3), (3, 1), (3, 2), (3, 3), (4, 1), (4, 2), (5, 1), (6, 1)]
+        #self.n_cwds = [(4, 1)]
 
     def quantize_q(self, new_Q, img):
         n_cwds_means = self.n_cwds_or_means.copy()

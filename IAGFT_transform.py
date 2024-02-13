@@ -26,7 +26,7 @@ class base_iagft_transform(nint_AVC_transform):
         self.N = 4
 
     def set_basis(self):
-        self.centroids = self.q_ops_obj.get_centroids(0)
+        self.centroids = self.q_ops_obj.get_centroids()
         self.get_transform_basis()
         self.proy_Q_table()
 

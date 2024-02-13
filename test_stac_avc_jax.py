@@ -1,4 +1,4 @@
-from STAC_AVC.utils_avc import read_image_resize_rect, ycbcr2rgb
+from STAC_AVC.utils_avc import read_image_resize_rect, ycbcr2rgb, bdrate
 
 from STAC_AVC.SAVC import SAVC
 from STAC_AVC.IAGFT_AVC import IAGFT_AVC
@@ -20,7 +20,7 @@ ssim_func = lambda x, y: -10*np.log10(ssim_mod(x, y))
 msssim_mod = lambda x, y: jax_msssim(x, y)
 msssim_func = lambda x, y: -10*np.log10(msssim_mod(x, y))
 
-true_N = (256, 256)
+true_N = (512, 512)
 nqs = 8
 N = 4
 
@@ -113,7 +113,6 @@ random.seed(0)
 random.shuffle(dirs)
 dirs = dirs[:num_images]
 
-
 psnr_vals = np.zeros((nqs, len(dirs)))
 ssim_vals = np.zeros_like(psnr_vals)
 msssim_vals = np.zeros_like(psnr_vals)
@@ -125,6 +124,12 @@ ssim_vals_qavc = np.zeros_like(psnr_vals_qavc)
 msssim_vals_qavc = np.zeros_like(psnr_vals_qavc)
 brisque_vals_qavc = np.zeros_like(psnr_vals_qavc)
 lpips_vals_qavc = np.zeros_like(psnr_vals_qavc)
+
+bdrate_psnr = np.zeros((len(dirs)))
+bdrate_ssim = np.zeros((len(dirs)))
+bdrate_msssim = np.zeros((len(dirs)))
+bdrate_brisque = np.zeros((len(dirs)))
+bdrate_lpips = np.zeros((len(dirs)))
 
 bits = []
 bits_qavc = []
@@ -156,6 +161,43 @@ for i in range(num_images):
 
     total_bits = np.array(bits_img_savc)/(img.shape[0]*img.shape[1])
     total_bits_qavc = np.array(bits_img_qavc)/(img.shape[0]*img.shape[1])
+
+    tuple_psnr_avc = get_touples(psnr_vals[:, i], total_bits)
+    tuple_psnr_qavc = get_touples(psnr_vals_qavc[:, i], total_bits_qavc)
+
+    tuple_ssim_avc = get_touples(ssim_vals[:, i], total_bits)
+    tuple_ssim_qavc = get_touples(ssim_vals_qavc[:, i], total_bits_qavc)
+
+    tuple_msssim_avc = get_touples(msssim_vals[:, i], total_bits)
+    tuple_msssim_qavc = get_touples(msssim_vals_qavc[:, i], total_bits_qavc)
+
+    tuple_brisque_avc = get_touples(brisque_vals[:, i], total_bits)
+    tuple_brisque_qavc = get_touples(brisque_vals_qavc[:, i], total_bits_qavc)
+
+    tuple_lpips_avc = get_touples(lpips_vals[:, i], total_bits)
+    tuple_lpips_qavc = get_touples(lpips_vals_qavc[:, i], total_bits_qavc)
+
+    bdrate_psnr[i] = bdrate(tuple_psnr_avc, tuple_psnr_qavc)
+    bdrate_ssim[i] = bdrate(tuple_ssim_avc, tuple_ssim_qavc)
+    bdrate_msssim[i] = bdrate(tuple_msssim_avc, tuple_msssim_qavc)
+    bdrate_brisque[i] = bdrate(tuple_brisque_avc, tuple_brisque_qavc)
+    bdrate_lpips[i] = bdrate(tuple_lpips_avc, tuple_lpips_qavc)
+
+    qavc_psnr = get_mean_format(bdrate_psnr[i])
+    qavc_ssim = get_mean_format(bdrate_ssim[i])
+    qavc_msssim = get_mean_format(bdrate_msssim[i])
+    qavc_brisque = get_mean_format(bdrate_brisque[i])
+    qavc_lpips = get_mean_format(bdrate_lpips[i])
+
+    print('Image: ', i, 'PSNR: ', qavc_psnr, 'SSIM: ', qavc_ssim, 'MS-SSIM: ', qavc_msssim, 'BRISQUE: ', qavc_brisque, 'LPIPS: ', qavc_lpips)
+
+    qavc_psnr = get_mean_format(bdrate_psnr[:i+1])
+    qavc_ssim = get_mean_format(bdrate_ssim[:i+1])
+    qavc_msssim = get_mean_format(bdrate_msssim[:i+1])
+    qavc_brisque = get_mean_format(bdrate_brisque[:i+1])
+    qavc_lpips = get_mean_format(bdrate_lpips[:i+1])
+
+    print('Mean iter: ', i, 'PSNR: ', qavc_psnr, 'SSIM: ', qavc_ssim, 'MS-SSIM: ', qavc_msssim, 'BRISQUE: ', qavc_brisque, 'LPIPS: ', qavc_lpips)
 
     plt.figure(figsize=(20, 10))
     plt.subplot(1, 5, 1)

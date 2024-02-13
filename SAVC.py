@@ -69,7 +69,7 @@ class SAVC():
 
     def set_quantization_parameters(self, ind_quality):
         self.QP = self.qsnu[ind_quality]
-        self.lam = 0.85 * (2 ** ((self.QP-12)/3))  # taken from FHHI
+        self.lam = 0.85 * ((2 ** ((self.QP-12)/3)))  # taken from FHHI
         if self.flag_sae:
             self.lam = np.sqrt(self.lam)
 
@@ -512,13 +512,6 @@ def pred_hu_4_blk(blk, predpel):
     return icp, pred, sae
 
 
-def no_pred_4(Seq, i, j):
-    icp = Seq[i:i + 4, j:j + 4]
-    pred = np.zeros((4, 4), dtype=int)
-    sae = compute_sae(icp)
-    return icp, pred, sae
-
-
 def mode_select_4_blk(blk, predpel, weights=1):
     blk = blk.copy().astype(int)
     predpel = predpel.copy().astype(int)
@@ -571,13 +564,6 @@ def mode_select_4_blk(blk, predpel, weights=1):
 def no_pred_blk(blk):
     icp = blk
     pred = np.zeros_like(blk, dtype=int)
-    sae = compute_sae(icp)
-    return icp, pred, sae
-
-
-def no_pred_16(Seq, i, j):
-    icp = Seq[i:i + 16, j:j + 16]
-    pred = np.zeros((16, 16), dtype=int)
     sae = compute_sae(icp)
     return icp, pred, sae
 
