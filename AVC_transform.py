@@ -153,7 +153,7 @@ class nint_AVC_transform(AVC_transform):
     def __init__(self, flag_uniform=True):
         super().__init__()
 
-        self.Cf = dct_2d(np.eye(4), norm='ortho', axis=0)
+        self.Cf = dct_2d(np.eye(4))
         self.Ci = self.Cf
         if flag_uniform:
             self.base_Q = np.ones((4, 4))

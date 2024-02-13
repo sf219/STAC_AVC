@@ -3,34 +3,7 @@ import numpy as np
 import scipy.io
 from PIL import Image, ImageOps
 import math
-
-y_table = np.array(
-    [[16, 11, 10, 16, 24, 40, 51, 61], [12, 12, 14, 19, 26, 58, 60,
-                                        55], [14, 13, 16, 24, 40, 57, 69, 56],
-     [14, 17, 22, 29, 51, 87, 80, 62], [18, 22, 37, 56, 68, 109, 103,
-                                        77], [24, 35, 55, 64, 81, 104, 113, 92],
-     [49, 64, 78, 87, 103, 121, 120, 101], [72, 92, 95, 98, 112, 100, 103, 99]],
-    dtype=np.float32)
-
-#
-c_table = np.empty((8, 8), dtype=np.float32)
-c_table.fill(99)
-c_table[:4, :4] = np.array([[17, 18, 24, 47], [18, 21, 26, 66],
-                            [24, 26, 56, 99], [47, 66, 99, 99]]).T
-
-def quality_to_factor(quality):
-    """ Calculate factor corresponding to quality
-    Input:
-        quality(float): Quality for jpeg compression
-    Output:
-        factor(float): Compression factor
-    """
-    if quality < 50:
-        factor = 50. / quality
-    else:
-        factor = 2 - quality/50
-    delta = factor*y_table[0, 0]
-    return factor, delta
+from scipy.fftpack import dct, idct
 
 def enc_cavlc(data, nL: int, nU: int):
     mat_file = scipy.io.loadmat('STAC_AVC/data/table.mat')

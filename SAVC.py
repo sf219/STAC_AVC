@@ -1,12 +1,13 @@
 import numpy as np
 from STAC_AVC.utils_avc import enc_cavlc
-from STAC_AVC.AVC_transform import AVC_transform as transform
+from STAC_AVC.AVC_transform import nint_AVC_transform as transform
 
 
 def compute_sae(res_block, weights=1):
     return np.sum(np.abs(np.sqrt(weights)*res_block))
 
 
+# if we are not in a top-left corner, we can use the most probable mode
 def most_probable_mode(modes, i, j):
     if (i > 0 and j > 0):
         a = modes[i-1, j]
@@ -16,6 +17,7 @@ def most_probable_mode(modes, i, j):
         return False, 0 # it doesn't really matter
     return prev == modes[i, j], prev
 
+# golomb encoder for the symbol
 
 def enc_golomb(symbol, sign):
     bits = ''
@@ -49,14 +51,14 @@ def enc_golomb(symbol, sign):
 class SAVC():
 
     def __init__(self, nqs, flag_uniform=True):
-        self.qsnu = np.linspace(3*nqs, 5*nqs, nqs)
+        self.qsnu = np.linspace(3*nqs, 5*nqs, nqs) # In this range, PSNR is between 30 and 40 typically
         self.mb_size = 16
         self.b_size = 4
-        self.trans = transform(flag_uniform)
+        self.trans = transform(flag_uniform) # we use the regular transform for now
 
     def set_quantization_parameters(self, ind_quality):
         self.QP = self.qsnu[ind_quality]
-        self.lam = 0.85 * (2 ** ((self.QP-12)/3)) #taken from FHHI
+        self.lam = 0.85 * (2 ** ((self.QP-12)/3))  # taken from FHHI
 
     # if using SAE, use the square root of the Lagrange multiplier
     def RDO(self, sae1, sae2, bits1, bits2):
