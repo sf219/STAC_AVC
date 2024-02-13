@@ -23,3 +23,4 @@ The LPIPS implementation in JAX can be found in https://github.com/wilson1yan/lp
 - [ ] Add 8x8 transforms
 - [ ] Add comments so that it is easier to interpret
 - [ ] dec_cavlc is not working properly
+- [ ] Add inter
