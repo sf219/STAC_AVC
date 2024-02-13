@@ -4,7 +4,11 @@ from STAC_AVC.AVC_transform import nint_AVC_transform as transform
 
 
 def compute_sae(res_block, weights=1):
-    return np.sum(np.abs(np.sqrt(weights)*res_block))
+    return np.sum(np.abs(weights*res_block))
+
+
+def compute_sse(res_block, weights=1):
+    return np.sum(np.square(np.sqrt(weights)*res_block))
 
 
 # if we are not in a top-left corner, we can use the most probable mode
@@ -50,20 +54,27 @@ def enc_golomb(symbol, sign):
 
 class SAVC():
 
-    def __init__(self, nqs, flag_uniform=True):
+    def __init__(self, nqs, flag_uniform=True, flag_sae=False):
         self.qsnu = np.linspace(3*nqs, 5*nqs, nqs) # In this range, PSNR is between 30 and 40 typically
         self.mb_size = 16
         self.b_size = 4
         self.trans = transform(flag_uniform) # we use the regular transform for now
+        self.flag_sae = flag_sae
+        if flag_sae:
+            self.distortion_function = lambda x: compute_sae(x)
+        else:
+            self.distortion_function = lambda x: compute_sse(x)
 
     def set_quantization_parameters(self, ind_quality):
         self.QP = self.qsnu[ind_quality]
         self.lam = 0.85 * (2 ** ((self.QP-12)/3))  # taken from FHHI
+        if self.flag_sae:
+            self.lam = np.sqrt(self.lam)
 
     # if using SAE, use the square root of the Lagrange multiplier
     def RDO(self, sae1, sae2, bits1, bits2):
-        term_1 = sae1 + np.sqrt(self.lam)*len(bits1)
-        term_2 = sae2 + np.sqrt(self.lam)*len(bits2)
+        term_1 = sae1 + self.lam*len(bits1)
+        term_2 = sae2 + self.lam*len(bits2)
 
         if term_1 < term_2:
             return 1
@@ -165,7 +176,7 @@ class SAVC():
 
                 icp_r_block, bits_b, num_zeros_4 = self.code_block_4(icp, num_zeros_4, cur_pos_mod_1, cur_pos_mod_2)
                 bits_frame += bits_b + bits_m
-                total_sae += compute_sae(icp_r_block + pred - blk)
+                total_sae += self.distortion_function(icp_r_block + pred - blk)
                 Pred[i:i+self.b_size, j:j+self.b_size] = pred
                 Res[i:i+self.b_size, j:j+self.b_size] = icp
                 Seq_r[i:i+self.b_size, j:j+self.b_size] = icp_r_block + pred
@@ -185,7 +196,7 @@ class SAVC():
         bits_m = mode_header_16(mode, idx, jdx)
         icp_r_block, bits_b, num_zeros_16 = self.code_block_16(icp, num_zeros_16, idx//4, jdx//4)
         bits_frame += bits_b + bits_m
-        total_sae += compute_sae(icp_r_block + pred - block)
+        total_sae += self.distortion_function(icp_r_block + pred - block)
         Pred = pred
         Res = icp
         Seq_r = icp_r_block + pred
