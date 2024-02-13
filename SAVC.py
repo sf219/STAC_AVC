@@ -1,12 +1,14 @@
 import numpy as np
 from STAC_AVC.utils_avc import enc_cavlc
 from STAC_AVC.AVC_transform import nint_AVC_transform as transform
+from numba import njit
 
 
+@njit
 def compute_sae(res_block):
     return np.abs(res_block).sum()
 
-
+@njit
 def compute_sse(res_block):
     return np.square(res_block).sum()
 

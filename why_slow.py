@@ -13,7 +13,7 @@ ssim_func = lambda x, y: -10*np.log10(ssim_mod(x, y))
 msssim_mod = lambda x, y: msssim(x, y)
 msssim_func = lambda x, y: -10*np.log10(msssim_mod(x, y))
 
-true_N = (256, 256)
+true_N = (512, 512)
 nqs = 8
 N = 8
 

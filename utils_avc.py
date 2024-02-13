@@ -13,12 +13,14 @@ Table_coeff3 = mat_file['Table_coeff3']
 Table_run = mat_file['Table_run']
 Table_zeros = mat_file['Table_zeros']
 
+# Define the scan order
+scan = np.array([(0, 0), (0, 1), (1, 0), (2, 0), (1, 1), (0, 2), (0, 3), (1, 2), (2, 1), (3, 0), (3, 1), (2, 2), (1, 3), (2, 3), (3, 2), (3, 3)])
+
+
 def enc_cavlc(data, nL: int, nU: int):
 
     bits = ""
 
-    # Define the scan order
-    scan = np.array([(0, 0), (0, 1), (1, 0), (2, 0), (1, 1), (0, 2), (0, 3), (1, 2), (2, 1), (3, 0), (3, 1), (2, 2), (1, 3), (2, 3), (3, 2), (3, 3)])
 
     # Use advanced indexing to get the elements in zig-zag order
     l = data[scan[:, 0], scan[:, 1]]
@@ -31,7 +33,7 @@ def enc_cavlc(data, nL: int, nU: int):
     for m, n in scan:
         l.append(data[m - 1][n - 1])
     """
-    
+
     i_last = 16
     # find the last non-zero co-eff in reverse order
     while i_last > 0 and l[i_last - 1] == 0:
