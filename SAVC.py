@@ -86,7 +86,6 @@ class SAVC():
     def final_bits(self, bits):
         return bits
 
-
     def compress(self, img, ind_quality=0):
         self.set_quantization_parameters(ind_quality)
         Y, bits, res = self.intra_encode_frame(img)
@@ -161,12 +160,6 @@ class SAVC():
         num_zeros_4 = self.num_zeros.copy()
 
         Seq_r_tmp = self.Seq_r.copy()
-
-        for i in range(0, self.mb_size, self.b_size):
-            for j in range(0, self.mb_size, self.b_size):
-                cur_pos_mod_1 = (idx + i)//self.b_size
-                cur_pos_mod_2 = (jdx + j)//self.b_size
-    
 
         for i in range(0, self.mb_size, self.b_size):
             for j in range(0, self.mb_size, self.b_size):

@@ -7,7 +7,7 @@ from STAC_AVC.hessian_compute.q_ops_gain_shape import q_ops_ssim as q_ops
 from sklearn.cluster import KMeans
 import random
 
-N = 8
+N = 4
 n_cwd = 8
 true_N = (512, 512)
 nqs = 6
@@ -15,14 +15,14 @@ nqs = 6
 compute_Q_obj = compute_Q(true_N=true_N, sampling_depth=16)
 q_ops_obj = q_ops(true_N=true_N, N=N, nqs=nqs)
 
-path = 'Images/CLIC/Training/'
+path = '../hessians/Images/CLIC/Training/'
 dirs = os.listdir(path)
 num_images = 100
 random.seed(0)
 random.shuffle(dirs)
 dirs = dirs[:num_images]
 
-q_vecs_8 = np.zeros((len(dirs), true_N[0]//N, true_N[1]//N, N*N))
+q_vecs = np.zeros((len(dirs), true_N[0]//N, true_N[1]//N, N*N))
 
 ind_image = -1
 for img_name in dirs:
@@ -40,14 +40,14 @@ for img_name in dirs:
     for i in range(0, true_N[0]//N):
         for j in range(0, true_N[1]//N):
             ravel_q = Q[i:i+N, j:j+N].ravel('F')
-            q_vecs_8[ind_image, i, j, :] = np.array(ravel_q)
+            q_vecs[ind_image, i, j, :] = np.array(ravel_q)
 
-q_vecs_8_tmp = q_vecs_8
+q_vecs_tmp = q_vecs
 target = q_ops_obj.name_target()
 
-q_vecs_8 = q_vecs_8_tmp.transpose(3, 0, 1, 2)
-q_vecs_8 = q_vecs_8[~np.isnan(q_vecs_8).any(axis=(1, 2, 3))]
-q_batch = q_vecs_8.reshape(N**2, -1)
+q_vecs = q_vecs_tmp.transpose(3, 0, 1, 2)
+q_vecs = q_vecs[~np.isnan(q_vecs).any(axis=(1, 2, 3))]
+q_batch = q_vecs.reshape(N**2, -1)
 
 mean_vals = np.mean(q_batch, axis=0)
 n_cwds_mean = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
@@ -64,10 +64,6 @@ for n_cwd in n_cwds_mean:
 
 n_cwds_shape = [1, 2, 3]
 shape_list = []
-
-q_vecs_8 = q_vecs_8_tmp.transpose(3, 0, 1, 2)
-q_vecs_8 = q_vecs_8[~np.isnan(q_vecs_8).any(axis=(1, 2, 3))]
-q_batch = q_vecs_8.reshape(N**2, -1)
 
 for ind_shape in range(len(n_cwds_shape)):
     for ind_mean in range(len(n_cwds_mean)):
@@ -96,7 +92,7 @@ for ind_shape in range(len(n_cwds_shape)):
         n_cwd_mean = n_cwds_mean[ind_mean]
         n_cwd_shape = n_cwds_shape[ind_shape]
 
-        str_save = 'week_5/data/centroids/centroids_' + target + '_' + str(n_cwd_mean) + '_' + str(n_cwd_shape) + '_' + str(true_N) + '_' + str(N) + '.npy'
+        str_save = 'STAC_AVC/hessian_compute/centroids/centroids_' + target + '_' + str(n_cwd_mean) + '_' + str(n_cwd_shape) + '_' + str(true_N) + '_' + str(N) + '.npy'
         centroids = final_centroids.transpose(2, 0, 1)
 
         np.save(str_save, centroids)

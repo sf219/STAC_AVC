@@ -3,3 +3,5 @@
 *.pyc
 *.ckpt
 *.pth
+*.npz
+*.npy

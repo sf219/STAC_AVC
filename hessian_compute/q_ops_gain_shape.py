@@ -1,8 +1,7 @@
 import numpy as np
 import scipy 
-from STAC_AVC.utils_lpit import unifgrid, inv_zig_zag, rlgr, dpcm_smart
-from scipy.fftpack import dct
-from scipy.linalg import eigh
+from STAC_AVC.utils_lpit import rlgr, dpcm_smart
+from STAC_AVC.hessian_compute.toolkit_iagft import get_transform_basis
 import scipy.stats
 
 
@@ -24,87 +23,9 @@ def filter_q(Q, sigma=2):
     return Q_filt
 
 
-def is_sorted_increasing(lst):
-    return all(lst[i] <= lst[i + 1] for i in range(len(lst) - 1))
-
-def is_sorted_decreasing(lst):
-    return all(lst[i] >= lst[i + 1] for i in range(len(lst) - 1))
-
-N = 8
-D_1d = dct(np.eye(N), norm='ortho', axis=0).T
-D_2d = np.kron(D_1d, D_1d)
-
-
-def fix_sign(basis):
-    proy = basis.T @ D_2d
-    sign_mtx = np.diag(np.sign(np.diag(proy)))
-    basis = basis @ sign_mtx
-    return basis
-
-
-def gevd(L, Q):
-    eigvals, eigvecs = eigh(L, Q, eigvals_only=False)
-    eigvals = np.real(eigvals)
-    eigvecs = np.real(eigvecs)
-    return eigvals, eigvecs
-
-
-def sort_inv_zz_dct_basis():
-    help_mid_basis = np.zeros((N*N, N*N))
-    for p in range(0, N**2):
-        bas = np.zeros((N**2, N**2))
-        bas[p, p] = 1
-        bas = np.diag(bas)
-        bas = np.reshape(bas, (N, N), order='F')
-        bas = inv_zig_zag(bas)
-        eig_ssp = D_1d @ bas @ D_1d.T
-        eig_ssp = eig_ssp.ravel('F')
-        help_mid_basis[:, p] = eig_ssp
-    return help_mid_basis
-
-
-def find_matches(inner_prod):
-    match = np.ones((N**2))*(N**2 + 1)
-    for p in range(0, N**2):
-        vector = np.abs(inner_prod[:, p])
-        pos = np.argsort(vector)[::-1]
-        pos_max = 0
-        match_tmp = pos[pos_max] 
-        while match_tmp in match:
-            pos_max += 1
-            match_tmp = pos[pos_max]
-        match[p] = match_tmp
-    return match
-
-
-def compute_iagft_basis(Q, L):
-    eigvals, eigvecs = gevd(L, Q)
-    help_mid_basis = sort_inv_zz_dct_basis()
-    inner_prod = eigvecs.T @ Q @ help_mid_basis  
-    match = find_matches(inner_prod)
-    eigvecs = eigvecs[:, match.astype(np.int32)]
-    eigvecs = fix_sign(eigvecs)
-    return eigvecs, eigvals
-
-
-def get_transform_basis(centroids):
-    L, _ = unifgrid(N)
-    n_cwd = centroids.shape[0]
-    eigvecs_list = []
-    eigvals_list = []
-    q_mtx = []
-    for i in range(n_cwd):
-        q_val = (centroids[i, :])
-        eigvecs, eigvals = compute_iagft_basis(np.diag(q_val.ravel('F')), L)
-        eigvecs_list.append(eigvecs)
-        q_mtx.append(np.diag(q_val.ravel('F')))
-        eigvals_list.append(eigvals)
-    return eigvecs_list, eigvals_list, q_mtx
-
-
 class q_ops():
 
-    def __init__(self, true_N, N, nqs=6):
+    def __init__(self, true_N, N=4, nqs=6):
         self.true_N = true_N
         self.N = N
         self.nqs = nqs
@@ -131,7 +52,7 @@ class q_ops():
         for n_cwd in self.n_cwds:
             indis += 1
             name_target = self.name_target()
-            str_load = 'week_5/data/centroids/centroids_' + name_target + '_' + str(n_cwd[0]) + '_' + str(n_cwd[1]) + '_' + str(true_N) + '_' + str(N) + '.npy'
+            str_load = 'STAC_AVC/hessian_compute/centroids/centroids_' + name_target + '_' + str(n_cwd[0]) + '_' + str(n_cwd[1]) + '_' + str(true_N) + '_' + str(N) + '.npy'
             centroids = np.load(str_load)
             centroids_scale = centroids
             U, _, _ = get_transform_basis(centroids_scale)

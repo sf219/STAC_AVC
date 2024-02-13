@@ -1,5 +1,10 @@
 from STAC_AVC.utils_avc import read_image_resize_rect, ycbcr2rgb
+
 from STAC_AVC.SAVC import SAVC
+from STAC_AVC.IAGFT_AVC import IAGFT_AVC
+from STAC_AVC.hessian_compute.compute_Q_jax import compute_Q_ssim as compute_Q
+from STAC_AVC.hessian_compute.q_ops_gain_shape import q_ops_ssim as q_ops
+
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -17,15 +22,23 @@ msssim_func = lambda x, y: -10*np.log10(msssim_mod(x, y))
 
 true_N = (256, 256)
 nqs = 8
-N = 8
+N = 4
 
 flag_uniform = True
 
+compute_q_obj = compute_Q(true_N=true_N, sampling_depth=16)
+q_ops_obj = q_ops(true_N=true_N, N=N, nqs=nqs)
 savc = SAVC(nqs, flag_uniform=flag_uniform)
+qavc = IAGFT_AVC(nqs, compute_Q_obj=compute_q_obj, q_ops_obj=q_ops_obj, flag_uniform=flag_uniform)
 
 
 def compress_AVC(qual_lev, img):
     res, Y, bits = savc.compress(img, qual_lev)
+    return Y, bits
+
+
+def compress_QAVC(qual_lev, img):
+    res, Y, bits = qavc.compress(img, qual_lev)
     return Y, bits
 
 
@@ -107,7 +120,14 @@ msssim_vals = np.zeros_like(psnr_vals)
 brisque_vals = np.zeros_like(psnr_vals)
 lpips_vals = np.zeros_like(psnr_vals)
 
+psnr_vals_qavc = np.zeros((nqs, len(dirs)))
+ssim_vals_qavc = np.zeros_like(psnr_vals_qavc)
+msssim_vals_qavc = np.zeros_like(psnr_vals_qavc)
+brisque_vals_qavc = np.zeros_like(psnr_vals_qavc)
+lpips_vals_qavc = np.zeros_like(psnr_vals_qavc)
+
 bits = []
+bits_qavc = []
 
 for i in range(num_images):
     fullpath = os.path.join(path,dirs[i])
@@ -116,22 +136,31 @@ for i in range(num_images):
     depth = 1
 
     bits_img_savc = []
+    bits_img_qavc = []
+
+    qavc.set_Q(img)
 
     for j in range(nqs):
 
         qual_idx = j
         comp_img_jpeg, bits_tmp = compress_AVC(qual_idx, img)
+        comp_img_jpeg_qavc, bits_tmp_qavc = compress_QAVC(qual_idx, img)
         bits_img_savc.append(bits_tmp)
+        bits_img_qavc.append(bits_tmp_qavc)
 
         psnr_vals[j, i], ssim_vals[j, i], msssim_vals[j, i], brisque_vals[j, i], lpips_vals[j, i] = evaluate_metrics(img, comp_img_jpeg)
+        psnr_vals_qavc[j, i], ssim_vals_qavc[j, i], msssim_vals_qavc[j, i], brisque_vals_qavc[j, i], lpips_vals_qavc[j, i] = evaluate_metrics(img, comp_img_jpeg_qavc)
 
     bits.append(bits_img_savc)
+    bits_qavc.append(bits_img_qavc)
 
     total_bits = np.array(bits_img_savc)/(img.shape[0]*img.shape[1])
+    total_bits_qavc = np.array(bits_img_qavc)/(img.shape[0]*img.shape[1])
 
     plt.figure(figsize=(20, 10))
     plt.subplot(1, 5, 1)
     plt.plot(total_bits, psnr_vals[:, i], label='AVC',linewidth=3)
+    plt.plot(total_bits_qavc, psnr_vals_qavc[:, i], label='QAVC',linewidth=3)
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
     plt.legend(fontsize=16)
@@ -139,6 +168,7 @@ for i in range(num_images):
     plt.title('PSNR', fontsize=16)
     plt.subplot(1, 5, 2)
     plt.plot(total_bits, ssim_vals[:, i], label='AVC', linewidth=3)
+    plt.plot(total_bits_qavc, ssim_vals_qavc[:, i], label='QAVC', linewidth=3)
     plt.xlabel('Bits per pixel', fontsize=16)
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
@@ -146,6 +176,7 @@ for i in range(num_images):
     plt.title('SSIM', fontsize=16)
     plt.subplot(1, 5, 3)
     plt.plot(total_bits, msssim_vals[:, i], label='AVC', linewidth=3)
+    plt.plot(total_bits_qavc, msssim_vals_qavc[:, i], label='QAVC', linewidth=3)
     plt.xlabel('Bits per pixel', fontsize=16)
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
@@ -153,6 +184,7 @@ for i in range(num_images):
     plt.title('MS-SSIM', fontsize=16)
     plt.subplot(1, 5, 4)
     plt.plot(total_bits, brisque_vals[:, i], label='AVC', linewidth=3)
+    plt.plot(total_bits_qavc, brisque_vals_qavc[:, i], label='QAVC', linewidth=3)
     plt.xlabel('Bits per pixel', fontsize=16)
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
@@ -160,6 +192,7 @@ for i in range(num_images):
     plt.title('BRISQUE', fontsize=16)
     plt.subplot(1, 5, 5)
     plt.plot(total_bits, lpips_vals[:, i], label='AVC', linewidth=3)
+    plt.plot(total_bits_qavc, lpips_vals_qavc[:, i], label='QAVC', linewidth=3)
     plt.xlabel('Bits per pixel', fontsize=16)
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
