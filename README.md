@@ -16,7 +16,8 @@ The LPIPS implementation in JAX can be found in https://github.com/wilson1yan/lp
 
 # TODO
 
-- [ ] Add support for perceptual metrics such as MS-SSIM, LPIPS, and BRISQUE
+- [X] Add support for perceptual metrics such as MS-SSIM, LPIPS, and BRISQUE
+- [ ] Add support for Q-AVC
 - [ ] Decouple AVC and Q-AVC code totally
 - [ ] Add Chroma support
 - [ ] Add 8x8 transforms

@@ -160,8 +160,8 @@ def _scale_features(features):
 
 
 def _score_svr(features):
-    sv_coef = np.load('iqa_funs/data_brisque.npz')['sv_coef']
-    sv = np.load('iqa_funs/data_brisque.npz')['sv']
+    sv_coef = np.load('STAC_AVC/iqa/data_brisque.npz')['sv_coef']
+    sv = np.load('STAC_AVC/iqa/data_brisque.npz')['sv']
     # gamma and rho are SVM model parameters taken from official implementation of BRISQUE on MATLAB
     # Source: https://live.ece.utexas.edu/research/Quality/index_algorithms.htm
     gamma = 0.05
