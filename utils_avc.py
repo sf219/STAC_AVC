@@ -17,13 +17,21 @@ def enc_cavlc(data, nL: int, nU: int):
 
     bits = ""
 
+    # Define the scan order
+    scan = np.array([(0, 0), (0, 1), (1, 0), (2, 0), (1, 1), (0, 2), (0, 3), (1, 2), (2, 1), (3, 0), (3, 1), (2, 2), (1, 3), (2, 3), (3, 2), (3, 3)])
+
+    # Use advanced indexing to get the elements in zig-zag order
+    l = data[scan[:, 0], scan[:, 1]]
+
+    """
     # Convert 4x4 matrix data into a 1x16 data of zig-zag scan
     l = []
     scan = [(1, 1), (1, 2), (2, 1), (3, 1), (2, 2), (1, 3), (1, 4), (2, 3), (3, 2), (4, 1), (4, 2), (3, 3), (2, 4), (3, 4), (4, 3), (4, 4)]
 
     for m, n in scan:
         l.append(data[m - 1][n - 1])
-
+    """
+    
     i_last = 16
     # find the last non-zero co-eff in reverse order
     while i_last > 0 and l[i_last - 1] == 0:
@@ -192,7 +200,6 @@ def enc_cavlc(data, nL: int, nU: int):
 
 def dec_cavlc(bits, nL, nU):
     # TODO: This is not working
-    # Load the table containing all the tables
 
     # find n parameter (context adaptive)
     n = (nL + nU + 1) >> 1

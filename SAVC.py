@@ -3,12 +3,12 @@ from STAC_AVC.utils_avc import enc_cavlc
 from STAC_AVC.AVC_transform import nint_AVC_transform as transform
 
 
-def compute_sae(res_block, weights=1):
-    return np.sum(np.abs(weights*res_block))
+def compute_sae(res_block):
+    return np.abs(res_block).sum()
 
 
-def compute_sse(res_block, weights=1):
-    return np.sum(np.square(np.sqrt(weights)*res_block))
+def compute_sse(res_block):
+    return np.square(res_block).sum()
 
 
 # if we are not in a top-left corner, we can use the most probable mode
@@ -54,7 +54,7 @@ def enc_golomb(symbol, sign):
 
 class SAVC():
 
-    def __init__(self, nqs, flag_uniform=True, flag_sae=False):
+    def __init__(self, nqs, flag_uniform=True, flag_sae=True):
         self.qsnu = np.linspace(3*nqs, 5*nqs, nqs) # In this range, PSNR is between 30 and 40 typically
         self.mb_size = 16
         self.b_size = 4
