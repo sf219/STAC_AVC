@@ -58,14 +58,10 @@ class SAVC():
         self.QP = self.qsnu[ind_quality]
         self.lam = 0.85 * (2 ** ((self.QP-12)/3)) #taken from FHHI
 
+    # if using SAE, use the square root of the Lagrange multiplier
     def RDO(self, sae1, sae2, bits1, bits2):
-        term_1 = sae1 + self.lam*len(bits1)
-        term_2 = sae2 + self.lam*len(bits2)
-
-        #print('********************************************')
-        #print('RD. Intra 4: ', term_1, ' Intra 16: ', term_2)
-        #print('Bits. Intra 4: ', len(bits1), ' Intra 16: ', len(bits2))
-        #print('SAE. Intra 4: ', sae1, ' Intra 16: ', sae2)
+        term_1 = sae1 + np.sqrt(self.lam)*len(bits1)
+        term_2 = sae2 + np.sqrt(self.lam)*len(bits2)
 
         if term_1 < term_2:
             return 1
