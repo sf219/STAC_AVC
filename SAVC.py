@@ -83,6 +83,10 @@ class SAVC():
         else:
             return 2
 
+    def final_bits(self, bits):
+        return bits
+
+
     def compress(self, img, ind_quality=0):
         self.set_quantization_parameters(ind_quality)
         Y, bits, res = self.intra_encode_frame(img)
@@ -99,6 +103,7 @@ class SAVC():
         bitstream += bits_frame
         # Calculate number of bits
         num_bits = len(bitstream)
+        num_bits = self.final_bits(num_bits)
         return Seq_r, num_bits, Res
 
     def encode_i_frame(self, Seq):
