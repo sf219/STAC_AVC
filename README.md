@@ -1,3 +1,5 @@
+Warning: Outdated code.
+
 This is a simple implementation of AVC in Python.
 
 It is intended for prototyping and is far from a functional AVC implementation.
